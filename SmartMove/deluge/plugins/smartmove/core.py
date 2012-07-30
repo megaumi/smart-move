@@ -39,10 +39,13 @@
 #
 
 import logging
+import os
 from deluge.plugins.pluginbase import CorePluginBase
 import deluge.component as component
 import deluge.configmanager
 from deluge.core.rpcserver import export
+from deluge.core.torrent import Torrent
+from twisted.internet.task import LoopingCall
 
 DEFAULT_PREFS = {
     "test":"NiNiNi"
@@ -53,11 +56,49 @@ log = logging.getLogger(__name__)
 class Core(CorePluginBase):
     def enable(self):
         self.config = deluge.configmanager.ConfigManager("smartmove.conf", DEFAULT_PREFS)
+        self.monkeypatch()
+        self.tasks = []
+        self.updater = LoopingCall(self._update)
+        self.updater.start(1)
 
     def disable(self):
-        pass
+        Torrent.move_storage = self._orig_move_storage
+        self.updater.stop()
+        self.tasks = None
+
+    def _update(self):
+        """
+        Updates information for each running tasks and deletes completed tasks.
+        Runs once per second.
+        """
+        for task in self.tasks:
+            task.update()
+            print task.torrent, task.size, task.current_size, task.current_percent
+            if task.current_size >= task.size:
+                print 'Move completed'
+                self.tasks.remove(task)
+
+    def monkeypatch(self):
+        """Replaces calls to Torrent.move_storage()"""
+        self._orig_move_storage = Torrent.move_storage
+
+        def move_storage(torrent, dest):
+            """Initiates moving data"""
+            self.tasks.append(Task(torrent, dest))
+            _orig_move_storage = self._orig_move_storage
+            result = _orig_move_storage(torrent, dest)
+            if not result:
+                self.tasks.pop()
+                return False
+            return True
+
+        Torrent.move_storage = move_storage
 
     def update(self):
+        """
+        This is supposed to be called by Deluge every second,
+        but it isn't. Need to fix in the upstream.
+        """
         pass
 
     @export
@@ -71,3 +112,24 @@ class Core(CorePluginBase):
     def get_config(self):
         """Returns the config dictionary"""
         return self.config.config
+
+class Task(object):
+    def __init__(self, torrent, dest):
+        self.torrent = torrent
+        self.dest = dest
+        self.files = [f['path'] for f in torrent.get_files()]
+        dl = torrent.get_options()['download_location']
+        self.size = self.get_size(self.files, dl)
+        self.current_size = 0
+        self.current_percent = 0
+
+    def get_size(self, files, path):
+        """Returns total size of 'files' currently located in 'path'"""
+        files = [os.path.join(path, f) for f in files]
+        return sum(os.stat(f).st_size for f in files if os.path.exists(f))
+
+    def update(self):
+        self.current_size = self.get_size(self.files, self.dest)
+        self.current_percent = self.current_size * 100 / self.size
+
+
