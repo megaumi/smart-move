@@ -68,15 +68,35 @@ class Core(CorePluginBase):
 
     def _update(self):
         """
-        Updates information for each running tasks and deletes completed tasks.
+        Updates information for each running task and deletes completed tasks.
         Runs once per second.
         """
         for task in self.tasks:
+            prev_update_size = task.current_size
             task.update()
-            print task.torrent, task.size, task.current_size, task.current_percent
+            print task.torrent, task.size, task.current_size, task.current_percent, task.same_size_counter
+            # Libtorrent's move_storage() does not signal if it is not going to
+            # move data, so we check for size changes since the last 5 updates
+            if len(self.tasks) == 1:
+                if task.current_size == prev_update_size:
+                    task.same_size_counter += 1
+                if task.same_size_counter >= 5:
+                    print 'Looks like nothing is being moved'
+                    self.tasks.remove(task)
             if task.current_size >= task.size:
                 print 'Move completed'
                 self.tasks.remove(task)
+
+    @export
+    def get_progress(self):
+        """Provides progress information on running tasks"""
+        details = [(task.torrent, task.size, task.current_size, task.current_percent)
+            for task in self.tasks]
+        if details:
+            total_percent = sum(i[2]for i in details) * 100 / sum(i[1]for i in details)
+        else:
+            total_percent = 0
+        return len(self.tasks), total_percent, details
 
     def monkeypatch(self):
         """Replaces calls to Torrent.move_storage()"""
@@ -89,8 +109,7 @@ class Core(CorePluginBase):
             result = _orig_move_storage(torrent, dest)
             if not result:
                 self.tasks.pop()
-                return False
-            return True
+            return bool(result)
 
         Torrent.move_storage = move_storage
 
@@ -122,6 +141,7 @@ class Task(object):
         self.size = self.get_size(self.files, dl)
         self.current_size = 0
         self.current_percent = 0
+        self.same_size_counter = 0
 
     def get_size(self, files, path):
         """Returns total size of 'files' currently located in 'path'"""
@@ -131,5 +151,3 @@ class Task(object):
     def update(self):
         self.current_size = self.get_size(self.files, self.dest)
         self.current_percent = self.current_size * 100 / self.size
-
-

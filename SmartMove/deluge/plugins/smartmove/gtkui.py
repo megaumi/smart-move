@@ -57,11 +57,29 @@ class GtkUI(GtkPluginBase):
         component.get("Preferences").add_page("SmartMove", self.glade.get_widget("prefs_box"))
         component.get("PluginManager").register_hook("on_apply_prefs", self.on_apply_prefs)
         component.get("PluginManager").register_hook("on_show_prefs", self.on_show_prefs)
+        self.status_item = component.get("StatusBar").add_item(
+            image=None,
+            text="",
+            callback=None,
+            tooltip="")
+
+    def update(self):
+         client.smartmove.get_progress().addCallback(self.update_status_bar)
+
+    def update_status_bar(self, data):
+        num_tasks, total_percent, details = data
+        if num_tasks:
+            self.status_item.set_text("Moving data: %s left, %s%%"
+                % (num_tasks, total_percent))
+        else:
+            self.status_item.set_text("")
 
     def disable(self):
         component.get("Preferences").remove_page("SmartMove")
         component.get("PluginManager").deregister_hook("on_apply_prefs", self.on_apply_prefs)
         component.get("PluginManager").deregister_hook("on_show_prefs", self.on_show_prefs)
+        component.get("StatusBar").remove_item(self.status_item)
+        del self.status_item
 
     def on_apply_prefs(self):
         log.debug("applying prefs for SmartMove")
