@@ -80,6 +80,8 @@ class Core(CorePluginBase):
             if len(self.tasks) == 1:
                 if task.current_size == prev_update_size:
                     task.same_size_counter += 1
+                else:
+                    task.same_size_counter = 0
                 if task.same_size_counter >= 5:
                     print 'Looks like nothing is being moved'
                     self.tasks.remove(task)
