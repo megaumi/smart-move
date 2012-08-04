@@ -133,12 +133,12 @@ class GtkUI(GtkPluginBase):
         self.glade.get_widget("txt_test").set_text(config["test"])
 
 class View(object):
+    """A table of currently moving tasks: torrent name, progress and destination folder"""
     def __init__(self):
-        from deluge.ui.gtkui.listview import cell_data_size
         self.glade = gtk.glade.XML(get_resource("torrent_view.glade"))
         self.window = self.glade.get_widget("torrent_view_window")
         self.torrentview = self.glade.get_widget("torrent_view")
-        self.store = gtk.ListStore(int, str, str, str)
+        self.store = gtk.ListStore(int, str, int, str)
         self.torrentview.set_model(self.store)
 
         # Set up columns
@@ -153,8 +153,9 @@ class View(object):
         name_col.add_attribute(renderer, "text", 1)
         self.torrentview.append_column(name_col)
 
-        progress_col = gtk.TreeViewColumn('Progress', renderer)
-        progress_col.add_attribute(renderer, "text", 2)
+        p_renderer = gtk.CellRendererProgress()
+        progress_col = gtk.TreeViewColumn('Progress', p_renderer)
+        progress_col.add_attribute(p_renderer, "value", 2)
         self.torrentview.append_column(progress_col)
 
         dest_col = gtk.TreeViewColumn('Destination', renderer)
