@@ -57,11 +57,10 @@ class GtkUI(GtkPluginBase):
         component.get("Preferences").add_page("SmartMove", self.glade.get_widget("prefs_box"))
         component.get("PluginManager").register_hook("on_apply_prefs", self.on_apply_prefs)
         component.get("PluginManager").register_hook("on_show_prefs", self.on_show_prefs)
-        self.status_item = component.get("StatusBar").add_item(image=None, text="",
-            callback=self.show_tasks, tooltip="Click to see the details")
+        self.status_item = component.get("StatusBar").add_item(stock='gtk-save-as', text="",
+            callback=self.show_tasks, tooltip="SmartMove: click to view the details")
         self.view = View()
 
-        # {task_id: gtk.TreeIter} mapping
         self.rows = {}
 
     def update(self):
@@ -102,7 +101,7 @@ class GtkUI(GtkPluginBase):
             self.status_item.set_text("")
 
     def show_tasks(self, *args):
-        self.view.window.show()
+        self.view.window.present()
 
     def process_messages(self, messages):
         """Process messages from core, such as errors, messages for the user, etc"""
@@ -138,6 +137,7 @@ class View(object):
         self.glade = gtk.glade.XML(get_resource("torrent_view.glade"))
         self.window = self.glade.get_widget("torrent_view_window")
         self.torrentview = self.glade.get_widget("torrent_view")
+        self.glade.signal_autoconnect(self)
         self.store = gtk.ListStore(int, str, int, str)
         self.torrentview.set_model(self.store)
 
@@ -161,6 +161,11 @@ class View(object):
         dest_col = gtk.TreeViewColumn('Destination', renderer)
         dest_col.add_attribute(renderer, "text", 3)
         self.torrentview.append_column(dest_col)
+
+    def on_torrent_view_window_delete_event(self, *args):
+        """Don't destroy the window, just hide it"""
+        self.window.hide()
+        return True
 
 class AlreadyContainsDialog(object):
     def __init__(self, msg):

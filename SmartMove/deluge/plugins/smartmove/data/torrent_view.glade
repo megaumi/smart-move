@@ -7,6 +7,7 @@
     <property name="title" translatable="yes">Currently moving data</property>
     <property name="default_width">512</property>
     <property name="default_height">256</property>
+    <signal name="delete_event" handler="on_torrent_view_window_delete_event" swapped="no"/>
     <child>
       <widget class="GtkScrolledWindow" id="scrolledwindow1">
         <property name="visible">True</property>
