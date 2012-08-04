@@ -77,8 +77,8 @@ class Core(CorePluginBase):
         for task in self.tasks:
             prev_update_size = task.cur_size
             task.update()
-            log.info('SmartMove: %s, %s, %s, %s, %s' %
-                (task.torrent, task.size, task.cur_size, task.cur_percent,
+            log.info('SmartMove: task %s = %s, %s, %s, %s' %
+                (task.id, task.size, task.cur_size, task.cur_percent,
                  task.counter))
             # Libtorrent's move_storage() does not signal if it is not going to
             # move data, so we check for size changes since the last 5 updates
@@ -88,10 +88,11 @@ class Core(CorePluginBase):
                 else:
                     task.counter = 0
                 if task.counter >= 5:
-                    log.info('SmartMove: looks like nothing is being moved')
+                    log.info('SmartMove: task %s -  looks like nothing is '
+                        'being moved, deleting task' % task.id)
                     self.tasks.remove(task)
             if task.cur_size >= task.size:
-                log.info('SmartMove: move completed')
+                log.info('SmartMove: task %s - move completed' % task.id)
                 self.tasks.remove(task)
 
     @export
@@ -112,16 +113,18 @@ class Core(CorePluginBase):
             task = Task(torrent, dest)
             # If the destination folder already contains a file/dir with the same
             # name as the torrent, torrent data will not be moved.
-            # The user will be notified via AlreadyContainsMessage.
+            # The user will be notified by AlreadyContainsMessage.
             already_contains_msg = task.check_dest()
             if already_contains_msg:
                 self.messages.append(already_contains_msg)
+                log.info('SmartMove: task %s - the destination folder already contains this '
+                    'file. Torrent storage will NOT be moved.' % task.id)
                 return False
             _orig_move_storage = self._orig_move_storage
             result = _orig_move_storage(torrent, dest)
             if result:
                 self.tasks.append(task)
-                log.info('SmartMove: started moving %s' % torrent)
+                log.info('SmartMove: task %s - started moving' % task.id)
             return result
 
         Torrent.move_storage = move_storage
@@ -160,6 +163,7 @@ class Task(object):
         self.cur_size = 0
         self.cur_percent = 0
         self.counter = 0
+        log.info('SmartMove: task %s - created' % self.id)
 
     def get_size(self, files, path):
         """Returns total size of 'files' currently located in 'path'"""

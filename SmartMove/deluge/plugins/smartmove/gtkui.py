@@ -78,11 +78,13 @@ class GtkUI(GtkPluginBase):
             if task.id in self.rows:
                 self.view.store.set(self.rows[task.id], 1, task.torrent.torrent_info.name())
                 self.view.store.set(self.rows[task.id], 2, task.cur_percent)
+                self.view.store.set(self.rows[task.id], 3, task.dest)
             else:
                 treeiter = self.view.store.append([
                     task.id,
                     task.torrent.torrent_info.name(),
-                    task.cur_percent])
+                    task.cur_percent,
+                    task.dest])
                 self.rows[task.id] = treeiter
 
         # Delete rows corresponding to completed tasks
@@ -136,7 +138,7 @@ class View(object):
         self.glade = gtk.glade.XML(get_resource("torrent_view.glade"))
         self.window = self.glade.get_widget("torrent_view_window")
         self.torrentview = self.glade.get_widget("torrent_view")
-        self.store = gtk.ListStore(int, str, str)
+        self.store = gtk.ListStore(int, str, str, str)
         self.torrentview.set_model(self.store)
 
         # Set up columns
@@ -155,6 +157,9 @@ class View(object):
         progress_col.add_attribute(renderer, "text", 2)
         self.torrentview.append_column(progress_col)
 
+        dest_col = gtk.TreeViewColumn('Destination', renderer)
+        dest_col.add_attribute(renderer, "text", 3)
+        self.torrentview.append_column(dest_col)
 
 class AlreadyContainsDialog(object):
     def __init__(self, msg):
