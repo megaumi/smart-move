@@ -57,22 +57,49 @@ class GtkUI(GtkPluginBase):
         component.get("Preferences").add_page("SmartMove", self.glade.get_widget("prefs_box"))
         component.get("PluginManager").register_hook("on_apply_prefs", self.on_apply_prefs)
         component.get("PluginManager").register_hook("on_show_prefs", self.on_show_prefs)
-        self.status_item = component.get("StatusBar").add_item(
-            image=None,
-            text="",
-            callback=None,
-            tooltip="")
+        self.status_item = component.get("StatusBar").add_item(image=None, text="",
+            callback=self.show_tasks, tooltip="Click to see the details")
+        self.view = View()
+
+        # {task_id: gtk.TreeIter} mapping
+        self.rows = {}
 
     def update(self):
-         client.smartmove.get_progress().addCallback(self.update_status_bar)
+         client.smartmove.get_progress().addCallback(self.update_gui)
 
-    def update_status_bar(self, data):
-        num_tasks, total_percent, details = data
+    def update_gui(self, tasks):
+        self.update_statusbar(len(tasks))
+        self.update_torrent_view(tasks)
+
+    def update_torrent_view(self, tasks):
+        # Update extisting or create new rows for current tasks
+        for task in tasks:
+            if task.id in self.rows:
+                self.view.store.set(self.rows[task.id], 1, task.torrent.torrent_info.name())
+                self.view.store.set(self.rows[task.id], 2, task.cur_percent)
+            else:
+                treeiter = self.view.store.append([
+                    task.id,
+                    task.torrent.torrent_info.name(),
+                    task.cur_percent])
+                self.rows[task.id] = treeiter
+
+        # Delete rows corresponding to completed tasks
+        current_task_ids = [task.id for task in tasks]
+        remove = [task_id for task_id in self.rows if task_id not in current_task_ids]
+        for task_id in remove:
+            self.view.store.remove(self.rows[task_id])
+            del self.rows[task_id]
+
+    def update_statusbar(self, num_tasks):
         if num_tasks:
-            self.status_item.set_text("Moving data: %s left, %s%%"
-                % (num_tasks, total_percent))
+            self.status_item.set_text("Moving data: %s left"
+            % num_tasks)
         else:
             self.status_item.set_text("")
+
+    def show_tasks(self, *args):
+        self.view.window.show()
 
     def disable(self):
         component.get("Preferences").remove_page("SmartMove")
@@ -94,3 +121,28 @@ class GtkUI(GtkPluginBase):
     def cb_get_config(self, config):
         "callback for on show_prefs"
         self.glade.get_widget("txt_test").set_text(config["test"])
+
+class View(object):
+    def __init__(self):
+        from deluge.ui.gtkui.listview import cell_data_size
+        self.glade = gtk.glade.XML(get_resource("torrent_view.glade"))
+        self.window = self.glade.get_widget("torrent_view_window")
+        self.torrentview = self.glade.get_widget("torrent_view")
+        self.store = gtk.ListStore(int, str, str)
+        self.torrentview.set_model(self.store)
+
+        # Set up columns
+        renderer = gtk.CellRendererText()
+
+        task_col = gtk.TreeViewColumn('Task', renderer)
+        task_col.add_attribute(renderer, "text", 0)
+        task_col.set_visible(False)
+        self.torrentview.append_column(task_col)
+
+        name_col = gtk.TreeViewColumn('Name', renderer)
+        name_col.add_attribute(renderer, "text", 1)
+        self.torrentview.append_column(name_col)
+
+        progress_col = gtk.TreeViewColumn('Progress', renderer)
+        progress_col.add_attribute(renderer, "text", 2)
+        self.torrentview.append_column(progress_col)

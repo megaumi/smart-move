@@ -55,6 +55,7 @@ log = logging.getLogger(__name__)
 
 class Core(CorePluginBase):
     def enable(self):
+        log.info('SmartMove: plugin enabled')
         self.config = deluge.configmanager.ConfigManager("smartmove.conf", DEFAULT_PREFS)
         self.monkeypatch()
         self.tasks = []
@@ -62,6 +63,7 @@ class Core(CorePluginBase):
         self.updater.start(1)
 
     def disable(self):
+        log.info('SmartMove: plugin disabled')
         Torrent.move_storage = self._orig_move_storage
         self.updater.stop()
         self.tasks = None
@@ -72,33 +74,29 @@ class Core(CorePluginBase):
         Runs once per second.
         """
         for task in self.tasks:
-            prev_update_size = task.current_size
+            prev_update_size = task.cur_size
             task.update()
-            print task.torrent, task.size, task.current_size, task.current_percent, task.same_size_counter
+            log.info('SmartMove: %s, %s, %s, %s, %s' %
+                (task.torrent, task.size, task.cur_size, task.cur_percent,
+                 task.counter))
             # Libtorrent's move_storage() does not signal if it is not going to
             # move data, so we check for size changes since the last 5 updates
             if len(self.tasks) == 1:
-                if task.current_size == prev_update_size:
-                    task.same_size_counter += 1
+                if task.cur_size == prev_update_size:
+                    task.counter += 1
                 else:
-                    task.same_size_counter = 0
-                if task.same_size_counter >= 5:
-                    print 'Looks like nothing is being moved'
+                    task.counter = 0
+                if task.counter >= 5:
+                    log.info('SmartMove: looks like nothing is being moved')
                     self.tasks.remove(task)
-            if task.current_size >= task.size:
-                print 'Move completed'
+            if task.cur_size >= task.size:
+                log.info('SmartMove: move completed')
                 self.tasks.remove(task)
 
     @export
     def get_progress(self):
         """Provides progress information on running tasks"""
-        details = [(task.torrent, task.size, task.current_size, task.current_percent)
-            for task in self.tasks]
-        if details:
-            total_percent = sum(i[2]for i in details) * 100 / sum(i[1]for i in details)
-        else:
-            total_percent = 0
-        return len(self.tasks), total_percent, details
+        return self.tasks
 
     def monkeypatch(self):
         """Replaces calls to Torrent.move_storage()"""
@@ -106,12 +104,12 @@ class Core(CorePluginBase):
 
         def move_storage(torrent, dest):
             """Initiates moving data"""
-            self.tasks.append(Task(torrent, dest))
             _orig_move_storage = self._orig_move_storage
             result = _orig_move_storage(torrent, dest)
-            if not result:
-                self.tasks.pop()
-            return bool(result)
+            if result:
+                self.tasks.append(Task(torrent, dest))
+                log.info('SmartMove: started moving %s' % torrent)
+            return result
 
         Torrent.move_storage = move_storage
 
@@ -135,15 +133,18 @@ class Core(CorePluginBase):
         return self.config.config
 
 class Task(object):
+    num_tasks = 0
     def __init__(self, torrent, dest):
+        self.id = Task.num_tasks
+        Task.num_tasks += 1
         self.torrent = torrent
         self.dest = dest
         self.files = [f['path'] for f in torrent.get_files()]
-        dl = torrent.get_options()['download_location']
-        self.size = self.get_size(self.files, dl)
-        self.current_size = 0
-        self.current_percent = 0
-        self.same_size_counter = 0
+        self.source = torrent.get_options()['download_location']
+        self.size = self.get_size(self.files, self.source)
+        self.cur_size = 0
+        self.cur_percent = 0
+        self.counter = 0
 
     def get_size(self, files, path):
         """Returns total size of 'files' currently located in 'path'"""
@@ -151,5 +152,5 @@ class Task(object):
         return sum(os.stat(f).st_size for f in files if os.path.exists(f))
 
     def update(self):
-        self.current_size = self.get_size(self.files, self.dest)
-        self.current_percent = self.current_size * 100 / self.size
+        self.cur_size = self.get_size(self.files, self.dest)
+        self.cur_percent = self.cur_size * 100 / self.size
