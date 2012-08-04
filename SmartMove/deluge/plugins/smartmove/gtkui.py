@@ -65,7 +65,8 @@ class GtkUI(GtkPluginBase):
         self.rows = {}
 
     def update(self):
-         client.smartmove.get_progress().addCallback(self.update_gui)
+        client.smartmove.get_progress().addCallback(self.update_gui)
+        client.smartmove.get_messages().addCallback(self.process_messages)
 
     def update_gui(self, tasks):
         self.update_statusbar(len(tasks))
@@ -100,6 +101,13 @@ class GtkUI(GtkPluginBase):
 
     def show_tasks(self, *args):
         self.view.window.show()
+
+    def process_messages(self, messages):
+        """Process messages from core, such as errors, messages for the user, etc"""
+        if messages:
+            msg = messages.pop(0)
+            if msg.type == 'already_contains':
+                AlreadyContainsDialog(msg).show()
 
     def disable(self):
         component.get("Preferences").remove_page("SmartMove")
@@ -146,3 +154,23 @@ class View(object):
         progress_col = gtk.TreeViewColumn('Progress', renderer)
         progress_col.add_attribute(renderer, "text", 2)
         self.torrentview.append_column(progress_col)
+
+
+class AlreadyContainsDialog(object):
+    def __init__(self, msg):
+        self.msg = msg
+        self.glade = gtk.glade.XML(get_resource("already_contains_dialog.glade"))
+        self.window = self.glade.get_widget("dialog")
+        self.label = self.glade.get_widget("label")
+        self.label.set_text('The destination folder already contains %s.'
+            '\nTorrent storage will NOT be moved.' % msg.t_name)
+        self.glade.signal_autoconnect(self)
+
+    def show(self):
+        self.window.show()
+
+    def on_ok_button_clicked(self, widget):
+        self.window.destroy()
+
+    def on_open_folder_button_clicked(self, widget):
+        deluge.common.open_file(self.msg.dest)

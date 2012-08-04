@@ -59,6 +59,7 @@ class Core(CorePluginBase):
         self.config = deluge.configmanager.ConfigManager("smartmove.conf", DEFAULT_PREFS)
         self.monkeypatch()
         self.tasks = []
+        self.messages = []
         self.updater = LoopingCall(self._update)
         self.updater.start(1)
 
@@ -98,16 +99,28 @@ class Core(CorePluginBase):
         """Provides progress information on running tasks"""
         return self.tasks
 
+    @export
+    def get_messages(self):
+        return self.messages
+
     def monkeypatch(self):
         """Replaces calls to Torrent.move_storage()"""
         self._orig_move_storage = Torrent.move_storage
 
         def move_storage(torrent, dest):
             """Initiates moving data"""
+            task = Task(torrent, dest)
+            # If the destination folder already contains a file/dir with the same
+            # name as the torrent, torrent data will not be moved.
+            # The user will be notified via AlreadyContainsMessage.
+            already_contains_msg = task.check_dest()
+            if already_contains_msg:
+                self.messages.append(already_contains_msg)
+                return False
             _orig_move_storage = self._orig_move_storage
             result = _orig_move_storage(torrent, dest)
             if result:
-                self.tasks.append(Task(torrent, dest))
+                self.tasks.append(task)
                 log.info('SmartMove: started moving %s' % torrent)
             return result
 
@@ -132,8 +145,10 @@ class Core(CorePluginBase):
         """Returns the config dictionary"""
         return self.config.config
 
+
 class Task(object):
     num_tasks = 0
+
     def __init__(self, torrent, dest):
         self.id = Task.num_tasks
         Task.num_tasks += 1
@@ -154,3 +169,17 @@ class Task(object):
     def update(self):
         self.cur_size = self.get_size(self.files, self.dest)
         self.cur_percent = self.cur_size * 100 / self.size
+
+    def check_dest(self):
+        """Check if the destination folder contains a file/dir with the same name"""
+        t_name = self.torrent.torrent_info.name()
+        if os.path.exists(os.path.join(self.dest, t_name)):
+            return AlreadyContainsMessage(t_name, self.dest)
+        return None
+
+
+class AlreadyContainsMessage(object):
+    def __init__(self, t_name, dest):
+        self.type = 'already_contains'
+        self.t_name = t_name
+        self.dest = dest
